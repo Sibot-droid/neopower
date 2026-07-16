@@ -1,0 +1,13 @@
+{
+  "name": "NeoPower Hot Water",
+  "short_name": "NeoPower",
+  "description": "Live tank temperature and heating activity for the NeoPower hot water system.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f9f9f7",
+  "theme_color": "#eb6834",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

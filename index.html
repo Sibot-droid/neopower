@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#eb6834">
+<title>NeoPower Hot Water</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg">
+<link rel="apple-touch-icon" href="icon.svg">
+<style>
+:root{--surface:#fcfcfb;--plane:#f9f9f7;--ink:#0b0b0b;--ink2:#52514e;--muted:#898781;--grid:#e1e0d9;--axis:#c3c2b7;--temp:#eb6834;--heat:#2a78d6;--line:#e6e5df}
+@media (prefers-color-scheme:dark){:root:where(:not([data-theme=light])){--surface:#1a1a19;--plane:#0d0d0d;--ink:#fff;--ink2:#c3c2b7;--muted:#898781;--grid:#2c2c2a;--axis:#383835;--temp:#d95926;--heat:#3987e5;--line:#2c2c2a}}
+:root[data-theme=dark]{--surface:#1a1a19;--plane:#0d0d0d;--ink:#fff;--ink2:#c3c2b7;--muted:#898781;--grid:#2c2c2a;--axis:#383835;--temp:#d95926;--heat:#3987e5;--line:#2c2c2a}
+*{box-sizing:border-box}body{margin:0;background:var(--plane);color:var(--ink);font-family:system-ui,Segoe UI,Roboto,Arial}
+header{padding:18px 16px 4px;text-align:center}h1{margin:0;font-size:23px}h1 .d{color:var(--temp)}
+.sub{color:var(--ink2);font-size:13px;margin:4px 0 0}
+main{max-width:820px;margin:0 auto;padding:8px 12px 26px}
+#err{display:none;background:#fff3f3;border:1px solid #f3c2c2;color:#a33;border-radius:10px;padding:10px 12px;font-size:13px;margin:12px 0}
+.top{display:flex;gap:12px;flex-wrap:wrap;align-items:stretch;margin-top:12px}
+.thermo{flex:0 0 120px;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:10px;text-align:center}
+.thermo svg{width:100%;height:auto;max-width:96px}
+.tiles{flex:1 1 260px;display:flex;flex-wrap:wrap;gap:10px;align-content:flex-start}
+.tile{flex:1 1 110px;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:10px 12px}
+.tk{font-size:12px;color:var(--muted)}.tv{font-size:23px;font-weight:600;margin-top:2px}.ts{font-size:12px;color:var(--ink2);margin-top:2px}
+h2{font-size:14px;margin:18px 4px 8px;color:var(--ink2)}
+.legend{display:flex;gap:14px;font-size:12px;color:var(--ink2);margin:2px 2px 8px;flex-wrap:wrap}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.sw{width:14px;height:3px;border-radius:2px;display:inline-block}.swb{width:12px;height:12px;border-radius:3px;opacity:.5}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:12px 12px 6px;position:relative;overflow-x:auto}
+.chart{width:100%;height:auto;min-width:560px;display:block}
+.grid{stroke:var(--grid);stroke-width:1}.ylab{fill:var(--muted);font-size:11px;text-anchor:end;dominant-baseline:middle}
+.xlab{fill:var(--muted);font-size:11px;text-anchor:middle}.band{fill:var(--heat);opacity:.14}
+.templine{fill:none;stroke:var(--temp);stroke-width:2;stroke-linejoin:round;stroke-linecap:round}
+.setline{fill:none;stroke:var(--muted);stroke-width:1.5;stroke-dasharray:5 4}
+.hline{stroke:var(--axis);stroke-width:1}.hdot{fill:var(--temp);stroke:var(--surface);stroke-width:2}
+#tip{position:absolute;pointer-events:none;background:var(--surface);border:1px solid var(--axis);border-radius:8px;padding:6px 9px;font-size:12px;color:var(--ink);box-shadow:0 2px 10px rgba(0,0,0,.15);display:none;white-space:nowrap}
+.minis{display:flex;flex-wrap:wrap;gap:8px}
+.mini{flex:1 1 150px;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:8px 10px}
+.mh{font-size:12px;color:var(--ink2)}.mf{font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums;margin-top:3px}
+.bar{height:8px;border-radius:4px;background:linear-gradient(90deg,var(--heat),var(--temp));margin-top:6px}
+footer{color:var(--muted);font-size:11.5px;text-align:center;padding:8px 16px 20px;line-height:1.5}
+</style>
+</head>
+<body>
+<header><h1><span class="d">◗</span> NeoPower Hot Water</h1><p class="sub" id="updated">loading…</p></header>
+<main>
+<div id="err">Couldn't load fresh stats — showing the last saved numbers (or try again when online).</div>
+<div class="top"><div class="thermo" id="thermo"></div><div class="tiles" id="tiles"></div></div>
+<h2 id="chartTitle">Temperature over 24 hours</h2>
+<div class="legend">
+  <span><span class="sw" style="background:var(--temp)"></span>Tank temperature</span>
+  <span><span class="sw" style="background:var(--muted)"></span>Set-point</span>
+  <span><span class="swb" style="background:var(--heat)"></span>Heat pump running</span>
+</div>
+<div class="panel" id="panel"></div>
+<h2>Recent days</h2>
+<div class="minis" id="recent"></div>
+</main>
+<footer>NeoPower hot-water tracker · sampled from SmartLife (Tuya) cloud.<br>Shaded bands mark when the heat pump was actively heating.</footer>
+<script>
+const DAY=86400;
+function heatingRuns(pts){const runs=[];let open=null;for(let i=0;i<pts.length;i++){if(pts[i].h){if(open===null)open=pts[i].s;}else if(open!==null){runs.push([open,pts[i].s]);open=null;}}if(open!==null)runs.push([open,pts[pts.length-1].s]);return runs;}
+
+function thermo(now,min,max,setT){
+  const lo=Math.min(20,Math.floor((min??now)-3)),hi=Math.max(setT??0,max??now,now)+4;
+  const frac=Math.max(0,Math.min((now-lo)/(hi-lo),1));
+  const top=18,bot=180,h=bot-top,fh=frac*h;
+  return `<svg viewBox="0 0 80 250" role="img" aria-label="Current tank temperature ${now} degrees">
+   <rect x="33" y="14" width="14" height="168" rx="7" fill="var(--grid)"/>
+   <rect x="33" y="${(bot-fh).toFixed(1)}" width="14" height="${fh.toFixed(1)}" rx="7" fill="var(--temp)"/>
+   <circle cx="40" cy="200" r="20" fill="var(--temp)"/><rect x="33" y="176" width="14" height="26" fill="var(--temp)"/>
+   <text x="40" y="206" text-anchor="middle" font-size="15" fill="#fff" font-family="system-ui">${Math.round(now)}°</text>
+  </svg><div class="tk" style="margin-top:4px">now</div><div class="tv">${now}°</div>`;
+}
+
+function chart(pts){
+  const W=820,H=340,mL=42,mR=12,mT=14,mB=30,pw=W-mL-mR,ph=H-mT-mB;
+  const temps=pts.map(p=>p.t),sets=pts.filter(p=>p.set!=null).map(p=>p.set);
+  let lo=Math.min(...temps),hi=Math.max(...temps,...(sets.length?sets:[-1e9]));
+  lo=Math.floor(lo-2);hi=Math.ceil(hi+2);if(hi-lo<6)hi=lo+6;
+  const x=s=>mL+(Math.max(0,Math.min(s,DAY))/DAY)*pw,y=t=>mT+(1-(t-lo)/(hi-lo))*ph;
+  let bands='';for(const[a,b]of heatingRuns(pts))bands+=`<rect x="${x(a).toFixed(1)}" y="${mT}" width="${Math.max(1,x(b)-x(a)).toFixed(1)}" height="${ph}" class="band"/>`;
+  let grid='';const step=(hi-lo)<=20?5:10;for(let tt=Math.ceil(lo/step)*step;tt<=hi;tt+=step){const yy=y(tt).toFixed(1);grid+=`<line x1="${mL}" y1="${yy}" x2="${W-mR}" y2="${yy}" class="grid"/><text x="${mL-6}" y="${yy}" class="ylab">${tt}°</text>`;}
+  let xl='';for(let h=0;h<=24;h+=3){const xx=x(h*3600).toFixed(1);xl+=`<line x1="${xx}" y1="${mT}" x2="${xx}" y2="${mT+ph}" class="grid"/><text x="${xx}" y="${H-10}" class="xlab">${String(h).padStart(2,'0')}</text>`;}
+  let sp='';if(sets.length){let d='',st=false,py=0;for(const p of pts){if(p.set==null)continue;const px=x(p.s),cy=y(p.set);if(!st){d+=`M${px.toFixed(1)},${cy.toFixed(1)}`;st=true;}else d+=`L${px.toFixed(1)},${py.toFixed(1)}L${px.toFixed(1)},${cy.toFixed(1)}`;py=cy;}sp=`<path d="${d}" class="setline"/>`;}
+  let d='',st=false;for(const p of pts){const px=x(p.s),py=y(p.t);d+=(st?'L':'M')+px.toFixed(1)+','+py.toFixed(1);st=true;}
+  return{W,H,mL,mR,mT,mB,lo,hi,svg:`<svg viewBox="0 0 ${W} ${H}" class="chart" id="msvg" preserveAspectRatio="xMidYMid meet">
+   <g>${grid}</g><g>${bands}</g>${xl}${sp}<path d="${d}" class="templine"/>
+   <g id="hv" style="display:none"><line class="hline"/><circle r="4.5" class="hdot"/></g>
+   <rect x="${mL}" y="${mT}" width="${pw}" height="${ph}" fill="transparent" id="hit"/></svg><div id="tip"></div>`};
+}
+
+function wireHover(g,pts){
+  const svg=document.getElementById('msvg'),hit=document.getElementById('hit'),hv=document.getElementById('hv'),tip=document.getElementById('tip');
+  const pw=g.W-g.mL-g.mR,ph=g.H-g.mT-g.mB;
+  const xf=s=>g.mL+(Math.max(0,Math.min(s,DAY))/DAY)*pw,yf=t=>g.mT+(1-(t-g.lo)/(g.hi-g.lo))*ph;
+  const line=hv.querySelector('.hline'),dot=hv.querySelector('.hdot');
+  function mv(e){const r=svg.getBoundingClientRect();const sx=(e.clientX-r.left)/r.width*g.W;const secs=Math.max(0,Math.min(((sx-g.mL)/pw)*DAY,DAY));
+   let b=pts[0];for(const p of pts)if(Math.abs(p.s-secs)<Math.abs(b.s-secs))b=p;const px=xf(b.s),py=yf(b.t);
+   line.setAttribute('x1',px);line.setAttribute('x2',px);line.setAttribute('y1',g.mT);line.setAttribute('y2',g.mT+ph);
+   dot.setAttribute('cx',px);dot.setAttribute('cy',py);hv.style.display='';
+   const hh=String(Math.floor(b.s/3600)).padStart(2,'0'),mm=String(Math.floor((b.s%3600)/60)).padStart(2,'0');
+   tip.innerHTML=hh+':'+mm+' &middot; <b>'+b.t+'&deg;</b>'+(b.set!=null?' &middot; set '+b.set+'&deg;':'')+(b.h?' &middot; heating':'');
+   tip.style.display='block';const bx=px/g.W*r.width;tip.style.left=Math.min(Math.max(bx-tip.offsetWidth/2,4),r.width-tip.offsetWidth-4)+'px';tip.style.top=(py/g.H*r.height-tip.offsetHeight-10)+'px';}
+  hit.addEventListener('mousemove',mv);hit.addEventListener('touchmove',e=>mv(e.touches[0]),{passive:true});
+  svg.addEventListener('mouseleave',()=>{hv.style.display='none';tip.style.display='none';});
+}
+
+function render(s){
+  const d=s.day;
+  const upd=new Date(s.generated).toLocaleString('en-AU',{day:'numeric',month:'short',hour:'numeric',minute:'2-digit'});
+  document.getElementById('updated').textContent=`Latest day ${d.date} · updated ${upd}`;
+  document.getElementById('chartTitle').textContent=`Temperature over 24 hours — ${d.date}`;
+  document.getElementById('thermo').innerHTML=thermo(d.now,d.min,d.max,d.setTemp);
+  const tiles=[['Today min / max',`${d.min??'—'}° / ${d.max??'—'}°`,`avg ${d.avg??'—'}°`],
+    ['Heating',`${d.heatingMinutes??0} min`,`${d.cycles??0} cycle${d.cycles===1?'':'s'}`],
+    d.setTemp!=null?['Set-point',`${d.setTemp}°`,d.mode?`mode ${d.mode}`:'']:null,
+    d.energyKwh!=null?['Energy today',`${d.energyKwh} kWh`,'']:null];
+  document.getElementById('tiles').innerHTML=tiles.filter(Boolean).map(([k,v,x])=>`<div class="tile"><div class="tk">${k}</div><div class="tv">${v}</div><div class="ts">${x}</div></div>`).join('');
+  if(d.points&&d.points.length>1){const g=chart(d.points);document.getElementById('panel').innerHTML=g.svg;wireHover(g,d.points);}
+  else document.getElementById('panel').innerHTML='<p class="sub" style="padding:8px">Not enough data yet today.</p>';
+  document.getElementById('recent').innerHTML=(s.recent||[]).map(r=>`<div class="mini"><div class="mh">${new Date(r.date+'T00:00:00').toLocaleDateString('en-AU',{weekday:'short',day:'numeric',month:'short'})}</div><div class="bar"></div><div class="mf">${r.min??'—'}°–${r.max??'—'}° · ${r.heatingMinutes??0} min heating</div></div>`).join('')||'<p class="sub">No earlier days yet.</p>';
+}
+
+async function load(){
+  try{const res=await fetch('stats.json?t='+Date.now());if(!res.ok)throw 0;render(await res.json());}
+  catch(e){try{const c=await caches.match('stats.json');if(c){render(await c.json());document.getElementById('err').style.display='block';return;}}catch{}
+   document.getElementById('err').textContent='No stats available — check your connection and reload.';document.getElementById('err').style.display='block';}
+}
+load();
+if('serviceWorker'in navigator)navigator.serviceWorker.register('sw.js');
+</script>
+</body>
+</html>

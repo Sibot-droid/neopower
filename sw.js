@@ -1,7 +1,7 @@
 // sw.js — network-first with cache fallback, so the app installs, loads fast,
 // and still shows the last-seen stats when offline.
 'use strict';
-const CACHE = 'neopower-v2';
+const CACHE = 'neopower-v3';
 const SHELL = ['./', './index.html', './manifest.webmanifest', './icon.svg'];
 
 self.addEventListener('install', (e) => {

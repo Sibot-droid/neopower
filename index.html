@@ -35,7 +35,7 @@ h2{font-size:14px;margin:18px 4px 8px;color:var(--ink2)}
 .templine2{fill:none;stroke:var(--temp2);stroke-width:1.75;stroke-linejoin:round;stroke-linecap:round}
 .setline{fill:none;stroke:var(--muted);stroke-width:1.5;stroke-dasharray:5 4}
 .hline{stroke:var(--axis);stroke-width:1}.hdot{fill:var(--temp);stroke:var(--surface);stroke-width:2}
-#tip{position:absolute;pointer-events:none;background:var(--surface);border:1px solid var(--axis);border-radius:8px;padding:6px 9px;font-size:12px;color:var(--ink);box-shadow:0 2px 10px rgba(0,0,0,.15);display:none;white-space:nowrap}
+.tip{position:absolute;pointer-events:none;background:var(--surface);border:1px solid var(--axis);border-radius:8px;padding:6px 9px;font-size:12px;color:var(--ink);box-shadow:0 2px 10px rgba(0,0,0,.15);display:none;white-space:nowrap}
 .minis{display:flex;flex-wrap:wrap;gap:8px}
 .mini{flex:1 1 150px;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:8px 10px}
 .mh{font-size:12px;color:var(--ink2)}.mf{font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums;margin-top:3px}
@@ -56,6 +56,8 @@ footer{color:var(--muted);font-size:11.5px;text-align:center;padding:8px 16px 20
   <span><span class="swb" style="background:var(--heat)"></span>Heat pump running</span>
 </div>
 <div class="panel" id="panel"></div>
+<h2 id="title24" style="display:none">Previous 24 hours</h2>
+<div class="panel" id="panel24" style="display:none"></div>
 <h2>Recent days</h2>
 <div class="minis" id="recent"></div>
 </main>
@@ -76,7 +78,7 @@ function thermo(now,min,max,setT){
   </svg><div class="tk" style="margin-top:4px">now</div><div class="tv">${now}°</div>`;
 }
 
-function chart(pts){
+function chart(pts,startSec=0){
   const W=820,H=340,mL=42,mR=12,mT=14,mB=30,pw=W-mL-mR,ph=H-mT-mB;
   const temps=pts.map(p=>p.t),bottoms=pts.filter(p=>p.tb!=null).map(p=>p.tb),sets=pts.filter(p=>p.set!=null).map(p=>p.set);
   let lo=Math.min(...temps,...(bottoms.length?bottoms:[1e9])),hi=Math.max(...temps,...(sets.length?sets:[-1e9]));
@@ -84,18 +86,21 @@ function chart(pts){
   const x=s=>mL+(Math.max(0,Math.min(s,DAY))/DAY)*pw,y=t=>mT+(1-(t-lo)/(hi-lo))*ph;
   let bands='';for(const[a,b]of heatingRuns(pts))bands+=`<rect x="${x(a).toFixed(1)}" y="${mT}" width="${Math.max(1,x(b)-x(a)).toFixed(1)}" height="${ph}" class="band"/>`;
   let grid='';const step=(hi-lo)<=20?5:10;for(let tt=Math.ceil(lo/step)*step;tt<=hi;tt+=step){const yy=y(tt).toFixed(1);grid+=`<line x1="${mL}" y1="${yy}" x2="${W-mR}" y2="${yy}" class="grid"/><text x="${mL-6}" y="${yy}" class="ylab">${tt}°</text>`;}
-  let xl='';for(let h=0;h<=24;h+=3){const xx=x(h*3600).toFixed(1);xl+=`<line x1="${xx}" y1="${mT}" x2="${xx}" y2="${mT+ph}" class="grid"/><text x="${xx}" y="${H-10}" class="xlab">${String(h).padStart(2,'0')}</text>`;}
+  let xl='';const first=startSec%10800?10800-startSec%10800:0;
+  for(let pos=first;pos<=DAY;pos+=10800){const hh=Math.round((startSec+pos)/3600)%24;
+   const lbl=(startSec===0&&pos===DAY)?'24':String(hh).padStart(2,'0');const xx=x(pos).toFixed(1);
+   xl+=`<line x1="${xx}" y1="${mT}" x2="${xx}" y2="${mT+ph}" class="grid"/><text x="${xx}" y="${H-10}" class="xlab">${lbl}</text>`;}
   let sp='';if(sets.length){let d='',st=false,py=0;for(const p of pts){if(p.set==null)continue;const px=x(p.s),cy=y(p.set);if(!st){d+=`M${px.toFixed(1)},${cy.toFixed(1)}`;st=true;}else d+=`L${px.toFixed(1)},${py.toFixed(1)}L${px.toFixed(1)},${cy.toFixed(1)}`;py=cy;}sp=`<path d="${d}" class="setline"/>`;}
   let d='',st=false;for(const p of pts){const px=x(p.s),py=y(p.t);d+=(st?'L':'M')+px.toFixed(1)+','+py.toFixed(1);st=true;}
   let db='',stb=false;for(const p of pts){if(p.tb==null)continue;const px=x(p.s),py=y(p.tb);db+=(stb?'L':'M')+px.toFixed(1)+','+py.toFixed(1);stb=true;}
-  return{W,H,mL,mR,mT,mB,lo,hi,svg:`<svg viewBox="0 0 ${W} ${H}" class="chart" id="msvg" preserveAspectRatio="xMidYMid meet">
+  return{W,H,mL,mR,mT,mB,lo,hi,svg:`<svg viewBox="0 0 ${W} ${H}" class="chart" preserveAspectRatio="xMidYMid meet">
    <g>${grid}</g><g>${bands}</g>${xl}${sp}${db?`<path d="${db}" class="templine2"/>`:''}<path d="${d}" class="templine"/>
-   <g id="hv" style="display:none"><line class="hline"/><circle r="4.5" class="hdot"/></g>
-   <rect x="${mL}" y="${mT}" width="${pw}" height="${ph}" fill="transparent" id="hit"/></svg><div id="tip"></div>`};
+   <g class="hv" style="display:none"><line class="hline"/><circle r="4.5" class="hdot"/></g>
+   <rect x="${mL}" y="${mT}" width="${pw}" height="${ph}" fill="transparent" class="hit"/></svg><div class="tip"></div>`};
 }
 
-function wireHover(g,pts){
-  const svg=document.getElementById('msvg'),hit=document.getElementById('hit'),hv=document.getElementById('hv'),tip=document.getElementById('tip');
+function wireHover(panel,g,pts,startSec=0){
+  const svg=panel.querySelector('.chart'),hit=panel.querySelector('.hit'),hv=panel.querySelector('.hv'),tip=panel.querySelector('.tip');
   const pw=g.W-g.mL-g.mR,ph=g.H-g.mT-g.mB;
   const xf=s=>g.mL+(Math.max(0,Math.min(s,DAY))/DAY)*pw,yf=t=>g.mT+(1-(t-g.lo)/(g.hi-g.lo))*ph;
   const line=hv.querySelector('.hline'),dot=hv.querySelector('.hdot');
@@ -103,18 +108,24 @@ function wireHover(g,pts){
    let b=pts[0];for(const p of pts)if(Math.abs(p.s-secs)<Math.abs(b.s-secs))b=p;const px=xf(b.s),py=yf(b.t);
    line.setAttribute('x1',px);line.setAttribute('x2',px);line.setAttribute('y1',g.mT);line.setAttribute('y2',g.mT+ph);
    dot.setAttribute('cx',px);dot.setAttribute('cy',py);hv.style.display='';
-   const hh=String(Math.floor(b.s/3600)).padStart(2,'0'),mm=String(Math.floor((b.s%3600)/60)).padStart(2,'0');
+   const cs=(startSec+b.s)%DAY;
+   const hh=String(Math.floor(cs/3600)).padStart(2,'0'),mm=String(Math.floor((cs%3600)/60)).padStart(2,'0');
    tip.innerHTML=hh+':'+mm+' &middot; <b>'+b.t+'&deg;</b>'+(b.tb!=null?' &middot; btm '+b.tb+'&deg;':'')+(b.set!=null?' &middot; set '+b.set+'&deg;':'')+(b.h?' &middot; heating':'');
    tip.style.display='block';const bx=px/g.W*r.width;tip.style.left=Math.min(Math.max(bx-tip.offsetWidth/2,4),r.width-tip.offsetWidth-4)+'px';tip.style.top=(py/g.H*r.height-tip.offsetHeight-10)+'px';}
   hit.addEventListener('mousemove',mv);hit.addEventListener('touchmove',e=>mv(e.touches[0]),{passive:true});
   svg.addEventListener('mouseleave',()=>{hv.style.display='none';tip.style.display='none';});
 }
 
+function drawChart(panelId,pts,startSec){
+  const panel=document.getElementById(panelId),g=chart(pts,startSec);
+  panel.innerHTML=g.svg;wireHover(panel,g,pts,startSec);
+}
+
 function render(s){
   const d=s.day;
   const upd=new Date(s.generated).toLocaleString('en-AU',{day:'numeric',month:'short',hour:'numeric',minute:'2-digit'});
   document.getElementById('updated').textContent=`Latest day ${d.date} · updated ${upd}`;
-  document.getElementById('chartTitle').textContent=`Temperature over 24 hours — ${d.date}`;
+  document.getElementById('chartTitle').textContent=`Today — ${d.date}`;
   document.getElementById('thermo').innerHTML=thermo(d.now,d.min,d.max,d.setTemp);
   const tiles=[['Today min / max',`${d.min??'—'}° / ${d.max??'—'}°`,`avg ${d.avg??'—'}°`],
     d.nowBottom!=null?['Bottom of tank',`${d.nowBottom}°`,`min ${d.minBottom??'—'}° / max ${d.maxBottom??'—'}°`]:null,
@@ -122,8 +133,15 @@ function render(s){
     d.setTemp!=null?['Set-point',`${d.setTemp}°`,d.mode?`mode ${d.mode}`:'']:null,
     d.energyKwh!=null?['Energy today',`${d.energyKwh} kWh`,'']:null];
   document.getElementById('tiles').innerHTML=tiles.filter(Boolean).map(([k,v,x])=>`<div class="tile"><div class="tk">${k}</div><div class="tv">${v}</div><div class="ts">${x}</div></div>`).join('');
-  if(d.points&&d.points.length>1){const g=chart(d.points);document.getElementById('panel').innerHTML=g.svg;wireHover(g,d.points);}
+  if(d.points&&d.points.length>1)drawChart('panel',d.points,0);
   else document.getElementById('panel').innerHTML='<p class="sub" style="padding:8px">Not enough data yet today.</p>';
+  const l=s.last24,t24=document.getElementById('title24'),p24=document.getElementById('panel24');
+  if(l&&l.points&&l.points.length>1){
+   const endT=new Date((l.start+DAY)*1000).toLocaleTimeString('en-AU',{hour:'numeric',minute:'2-digit'});
+   t24.textContent=`Previous 24 hours — up to ${endT}`;
+   t24.style.display='';p24.style.display='';
+   drawChart('panel24',l.points,l.startSec);
+  }else{t24.style.display='none';p24.style.display='none';}
   document.getElementById('recent').innerHTML=(s.recent||[]).map(r=>`<div class="mini"><div class="mh">${new Date(r.date+'T00:00:00').toLocaleDateString('en-AU',{weekday:'short',day:'numeric',month:'short'})}</div><div class="bar"></div><div class="mf">${r.min??'—'}°–${r.max??'—'}° · ${r.heatingMinutes??0} min heating</div></div>`).join('')||'<p class="sub">No earlier days yet.</p>';
 }
 

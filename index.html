@@ -90,7 +90,10 @@ function chart(pts,startSec=0){
   const W=820,H=340,mL=42,mR=12,mT=14,mB=30,pw=W-mL-mR,ph=H-mT-mB;
   const temps=pts.map(p=>p.t),bottoms=pts.filter(p=>p.tb!=null).map(p=>p.tb),sets=pts.filter(p=>p.set!=null).map(p=>p.set);
   let lo=Math.min(...temps,...(bottoms.length?bottoms:[1e9])),hi=Math.max(...temps,...(sets.length?sets:[-1e9]));
-  lo=Math.floor(lo-2);hi=Math.ceil(hi+2);if(hi-lo<6)hi=lo+6;
+  // Top out at 80° minimum. The set-point can reach 75°, and with only +2° of headroom the
+  // highest gridline label sat on the plot edge and got clipped on a phone. A fixed ceiling
+  // also keeps the scale steady day to day, so curves stay comparable.
+  lo=Math.floor(lo-2);hi=Math.max(80,Math.ceil((hi+2)/10)*10);if(hi-lo<6)hi=lo+6;
   const x=s=>mL+(Math.max(0,Math.min(s,DAY))/DAY)*pw,y=t=>mT+(1-(t-lo)/(hi-lo))*ph;
   let bands='';for(const[a,b]of heatingRuns(pts))bands+=`<rect x="${x(a).toFixed(1)}" y="${mT}" width="${Math.max(1,x(b)-x(a)).toFixed(1)}" height="${ph}" class="band"/>`;
   let grid='';const step=(hi-lo)<=20?5:10;for(let tt=Math.ceil(lo/step)*step;tt<=hi;tt+=step){const yy=y(tt).toFixed(1);grid+=`<line x1="${mL}" y1="${yy}" x2="${W-mR}" y2="${yy}" class="grid"/><text x="${mL-6}" y="${yy}" class="ylab">${tt}°</text>`;}

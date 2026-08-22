@@ -17,6 +17,15 @@ header{padding:18px 16px 4px;text-align:center}h1{margin:0;font-size:23px}h1 .d{
 .sub{color:var(--ink2);font-size:13px;margin:4px 0 0}
 main{max-width:820px;margin:0 auto;padding:8px 12px 26px}
 #err{display:none;background:#fff3f3;border:1px solid #f3c2c2;color:#a33;border-radius:10px;padding:10px 12px;font-size:13px;margin:12px 0}
+#stale{display:none;border-radius:10px;padding:10px 12px;font-size:13px;margin:12px 0;line-height:1.45}
+#stale b{font-weight:600}
+#stale.warn{background:#fff8e6;border:1px solid #e8d08a;color:#7a5a12}
+#stale.bad{background:#fff3f3;border:1px solid #f3c2c2;color:#a33}
+@media (prefers-color-scheme:dark){:root:where(:not([data-theme=light])) #stale.warn{background:#2a2412;border-color:#5c4d1f;color:#e8c974}
+:root:where(:not([data-theme=light])) #stale.bad{background:#2c1717;border-color:#5e2c2c;color:#f0a3a3}}
+:root[data-theme=dark] #stale.warn{background:#2a2412;border-color:#5c4d1f;color:#e8c974}
+:root[data-theme=dark] #stale.bad{background:#2c1717;border-color:#5e2c2c;color:#f0a3a3}
+.dim{opacity:.55}
 .top{display:flex;gap:12px;flex-wrap:wrap;align-items:stretch;margin-top:12px}
 .thermo{flex:0 0 120px;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:10px;text-align:center}
 .thermo svg{width:100%;height:auto;max-width:96px}
@@ -47,6 +56,7 @@ footer{color:var(--muted);font-size:11.5px;text-align:center;padding:8px 16px 20
 <header><h1><span class="d">◗</span> NeoPower Hot Water</h1><p class="sub" id="updated">loading…</p></header>
 <main>
 <div id="err">Couldn't load fresh stats — showing the last saved numbers (or try again when online).</div>
+<div id="stale"></div>
 <div class="top"><div class="thermo" id="thermo"></div><div class="tiles" id="tiles"></div></div>
 <h2 id="chartTitle">Temperature over 24 hours</h2>
 <div class="legend">
@@ -119,10 +129,37 @@ function drawChart(panelId,pts,startSec){
   panel.innerHTML=g.svg;wireHover(panel,g,pts,startSec);
 }
 
+// Age of the newest actual reading. graph.js/publish.js keep running even when the
+// collector fails, so a days-old temperature can otherwise be presented as "now".
+const STALE_WARN=5*3600, STALE_BAD=24*3600;
+function humanAge(sec){
+  if(sec<5400)return Math.round(sec/60)+" minutes";
+  if(sec<172800){const h=Math.round(sec/360)/10;return h+(h===1?" hour":" hours");}
+  const d=Math.round(sec/8640)/10;return d+(d===1?" day":" days");
+}
+function showStaleness(s){
+  const el=document.getElementById("stale");
+  const ts=s.latestSampleTs??(s.day&&s.day.nowTs);
+  if(!ts){el.style.display="none";return 0;}
+  const age=Math.max(0,Math.round(Date.now()/1000)-ts);
+  if(age<=STALE_WARN){el.style.display="none";el.className="";return age;}
+  const when=new Date(ts*1000).toLocaleString("en-AU",{weekday:"short",day:"numeric",month:"short",hour:"numeric",minute:"2-digit"});
+  const bad=age>STALE_BAD;
+  el.className=bad?"bad":"warn";
+  el.innerHTML=(bad?"&#9888; <b>These readings are out of date.</b> ":"<b>Data is running late.</b> ")
+    +"The newest reading is <b>"+humanAge(age)+" old</b> ("+when+"), so the figures below are "
+    +"not current."+(bad?" The collector has probably stopped &mdash; check the tracker on the PC.":"");
+  el.style.display="block";
+  return age;
+}
 function render(s){
   const d=s.day;
-  const upd=new Date(s.generated).toLocaleString('en-AU',{day:'numeric',month:'short',hour:'numeric',minute:'2-digit'});
-  document.getElementById('updated').textContent=`Latest day ${d.date} · updated ${upd}`;
+  const age=showStaleness(s);
+  const readTs=(s.latestSampleTs??d.nowTs)*1000;
+  const rd=new Date(readTs).toLocaleString('en-AU',{day:'numeric',month:'short',hour:'numeric',minute:'2-digit'});
+  document.getElementById('updated').textContent=`Last reading ${rd}`;
+  // Badly stale numbers get visually demoted so they cannot be mistaken for live ones.
+  document.querySelector('.top').classList.toggle('dim',age>STALE_BAD);
   const title=document.getElementById('chartTitle');
   document.getElementById('thermo').innerHTML=thermo(d.now,d.min,d.max,d.setTemp);
   const tiles=[['Today min / max',`${d.min??'—'}° / ${d.max??'—'}°`,`avg ${d.avg??'—'}°`],

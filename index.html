@@ -59,6 +59,8 @@ footer{color:var(--muted);font-size:11.5px;text-align:center;padding:8px 16px 20
 <div id="err">Couldn't load fresh stats — showing the last saved numbers (or try again when online).</div>
 <div id="stale"></div>
 <div class="top"><div class="thermo" id="thermo"></div><div class="tiles" id="tiles"></div></div>
+<h2 id="copTitle" style="display:none">Efficiency</h2>
+<div class="tiles" id="cop"></div>
 <h2 id="chartTitle">Temperature over 24 hours</h2>
 <div class="legend">
   <span><span class="sw" style="background:var(--temp)"></span>Top of tank</span>
@@ -176,6 +178,22 @@ function sparkScale(recent){
   return{lo:Math.floor(Math.min(...v)-2),hi:Math.max(80,Math.ceil((Math.max(...v)+2)/10)*10)};
 }
 
+// Efficiency tiles. COP is heat delivered per unit of electricity: 1.0 is a plain element,
+// 3-4 is a working heat pump. It is ESTIMATED — input power is inferred from the house CT
+// clamp, not metered at the heater — so the cycle count is shown to keep that visible.
+function renderCop(c){
+  const el=document.getElementById('cop'),h=document.getElementById('copTitle');
+  if(!c||!c.cycles){el.innerHTML='';h.style.display='none';return;}
+  h.style.display='';
+  const tiles=[
+    ['Efficiency (COP)',c.medianCop.toFixed(1)+'×',`heat out per unit in · ${c.cycles} of ${c.cyclesTotal} cycles`],
+    c.solarPct!=null?['Run on solar',c.solarPct+'%',`${c.kwhIn} kWh used, mostly off the roof`]:null,
+    ['Heat delivered',c.kwhOut+' kWh',`from ${c.kwhIn} kWh of electricity`],
+    ['Typical draw',c.typicalW+' W',`while the compressor runs`],
+  ].filter(Boolean);
+  el.innerHTML=tiles.map(([k,v,x])=>`<div class="tile"><div class="tk">${k}</div><div class="tv">${v}</div><div class="ts">${x}</div></div>`).join('');
+}
+
 function render(s){
   const d=s.day;
   const age=showStaleness(s);
@@ -192,6 +210,7 @@ function render(s){
     d.setTemp!=null?['Set-point',`${d.setTemp}°`,d.mode?`mode ${d.mode}`:'']:null,
     d.energyKwh!=null?['Energy today',`${d.energyKwh} kWh`,'']:null];
   document.getElementById('tiles').innerHTML=tiles.filter(Boolean).map(([k,v,x])=>`<div class="tile"><div class="tk">${k}</div><div class="tv">${v}</div><div class="ts">${x}</div></div>`).join('');
+  renderCop(s.cop);
   const l=s.last24;
   if(l&&l.points&&l.points.length>1){
    const endT=new Date((l.start+DAY)*1000).toLocaleTimeString('en-AU',{hour:'numeric',minute:'2-digit'});
